@@ -1,0 +1,98 @@
+with Main as 
+(
+	SELECT *
+	FROM Sales
+	WHERE Customer_ID != 0 and Quantity > 0 and Price > 0
+),
+dup_check as 
+(
+	select *, ROW_NUMBER() over (partition by Invoice, StockCode, Quantity order by InvoiceDate) as dup_flag
+	from Main
+)
+select *
+into #online_retail_main
+from dup_check
+where dup_flag = 1
+
+
+SELECT
+    Customer_ID,
+	MIN(InvoiceDate) as first_purchase_date,
+    FORMAT(MIN(InvoiceDate), 'yyyy-MM-01') AS Cohort_Date
+into #Cohort
+FROM
+    #online_retail_main
+GROUP BY
+    Customer_ID
+
+select 
+	mmm.*,
+	cohort_index = year_diff * 12 + month_diff + 1
+into #cohort_retention
+FROM(
+	Select
+		mm.*,
+		year_diff = invoice_year - cohort_year,
+		month_diff = invoice_month - cohort_month
+	FROM(
+		Select 
+			m.*,
+			c.Cohort_Date,
+			year(m.InvoiceDate) as invoice_year,
+			month(m.InvoiceDate) as invoice_month,
+			year(c.Cohort_Date) as cohort_year,
+			month(c.Cohort_Date) as cohort_month
+		FROM #online_retail_main as m
+		LEFT JOIN #Cohort as c
+		on m.Customer_ID = c.Customer_ID
+		) as mm
+) as mmm
+
+Select *
+into #co_pivot
+FROM(
+	select 
+		distinct Customer_ID,
+		Cohort_Date, 
+		cohort_index
+	from #cohort_retention
+) as tb1 
+pivot(
+	Count(Customer_ID)
+	for Cohort_Index In
+		([1],
+		[2],
+		[3],
+		[4],
+		[5],
+		[6],
+		[7],
+		[8],
+		[9],
+		[10],
+		[11],
+		[12],
+		[13])
+) as pivot_table
+order by Cohort_Date
+
+select *
+from #co_pivot
+order by Cohort_Date
+
+select Cohort_Date ,
+	  (1.0 * [1]/[1] * 100) as [1], 
+    1.0 * [2]/[1] * 100 as [2], 
+    1.0 * [3]/[1] * 100 as [3],  
+    1.0 * [4]/[1] * 100 as [4],  
+    1.0 * [5]/[1] * 100 as [5], 
+    1.0 * [6]/[1] * 100 as [6], 
+    1.0 * [7]/[1] * 100 as [7], 
+	  1.0 * [8]/[1] * 100 as [8], 
+    1.0 * [9]/[1] * 100 as [9], 
+    1.0 * [10]/[1] * 100 as [10],   
+    1.0 * [11]/[1] * 100 as [11],  
+    1.0 * [12]/[1] * 100 as [12],  
+	  1.0 * [13]/[1] * 100 as [13]
+from #co_pivot
+order by Cohort_Date
